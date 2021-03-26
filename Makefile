@@ -47,18 +47,18 @@
 #
 # 0) Specify compiler and linker:
 
-CXX=/usr/local/bin/g++
-LINKER=/usr/local/bin/g++
-#CXX=mpicxx
-#LINKER=mpicxx
+#CXX ?= clang++
+#LINKER ?= clang++
 
+CXX = mpicxx
+LINKER = llvm-link
 
 # 1) Build with MPI or not?
 #    If you want to run the program with MPI, make sure USE_MPI is set 
 #    to -DUSING_MPI
 
 USE_MPI =
-#USE_MPI = -DUSING_MPI
+USE_MPI = -DUSING_MPI
 
 
 # 2) MPI headers:  
@@ -75,9 +75,19 @@ USE_MPI =
 #    Typically some reasonably high level of optimization should be used to 
 #    enhance performance.
 
+CPP_OPT_FLAGS = -O3
+
 #IA32 with GCC: 
-#CPP_OPT_FLAGS = -O3 -funroll-all-loops -malign-double
-CPP_OPT_FLAGS = -O3 -ftree-vectorize -ftree-vectorizer-verbose=2
+ifneq ($(LINKER),llvm-link)
+	CPP_OPT_FLAGS += -funroll-all-loops -malign-double
+	CPP_OPT_FLAGS += -ftree-vectorize -ftree-vectorizer-verbose=2
+endif
+
+ifeq ($(LINKER),llvm-link)
+	CPP_OPT_FLAGS += -c -emit-llvm
+	CPP_OPT_FLAGS += -stdlib=libc++ -fno-exceptions
+	CPP_OPT_FLAGS += -Xclang -disable-lifetime-markers
+endif
 
 #
 # 4) MPI library:
@@ -94,8 +104,8 @@ CPP_OPT_FLAGS = -O3 -ftree-vectorize -ftree-vectorizer-verbose=2
 #    If you want to run the program with OpenMP, make sure USING_OMP is set
 #    to -DUSING_OMP
 
-USE_OMP = 
-#USE_OMP = -DUSING_OMP
+USE_OMP =
+USE_OMP = -DUSING_OMP
 
 #
 # 6) OpenMP Compiler argument
@@ -107,7 +117,7 @@ USE_OMP =
 #
 # 7) System libraries: (May need to add -lg2c before -lm)
 
-SYS_LIB =-lm
+SYS_LIB = -lm
 
 #
 # 6) Specify name if executable (optional):
@@ -116,7 +126,7 @@ TARGET = test_HPCCG
 
 ################### Derived Quantities (no modification required) ##############
 
-CXXFLAGS= $(CPP_OPT_FLAGS) $(OMP_FLAGS) $(USE_OMP) $(USE_MPI) $(MPI_INC)
+CXXFLAGS += $(CPP_OPT_FLAGS) $(OMP_FLAGS) $(USE_OMP) $(USE_MPI) $(MPI_INC)
 
 LIB_PATHS= $(SYS_LIB)
 
@@ -129,10 +139,14 @@ TEST_CPP = main.cpp generate_matrix.cpp read_HPC_row.cpp \
 TEST_OBJ          = $(TEST_CPP:.cpp=.o)
 
 $(TARGET): $(TEST_OBJ)
+ifeq ($(LINKER),llvm-link)
+	$(LINKER) $(TEST_OBJ) -o $(TARGET).bc
+else
 	$(LINKER) $(CPP_OPT_FLAGS) $(OMP_FLAGS) $(TEST_OBJ) $(LIB_PATHS) -o $(TARGET)
+endif
 
 test:
 	@echo "Not implemented yet..."
 
 clean:
-	@rm -f *.o  *~ $(TARGET) $(TARGET).exe test_HPCPCG 
+	@rm -f *.o  *~ $(TARGET) $(TARGET).exe $(TARGET).bc
